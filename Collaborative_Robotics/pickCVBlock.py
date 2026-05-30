@@ -273,6 +273,32 @@ while machine_state == "pick place":
         next_state()
     else: break
 
+def pick_up_object_from_point (api, position_vec, drop_zone=None):
+    x,y = position_vec
+    #Converts image -> robot coordinates
+    rx, ry = pixel_to_robot(x, y, H_matrix)
+    print(f"Pointed pick at image ({x},{y}) → robot ({rx:.2f},{ry:.2f})")
+    # --- SAFETY / APPROACH ---
+    dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
+
+    # --- DESCEND TO PICK ---
+    dobotArm.move_to_xyz(api, rx, ry, Z_PICK)
+
+    # --- GRAB ---
+    dobotArm.close_gripper(api)
+
+    # --- LIFT ---
+    dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
+
+    # --- OPTIONAL DROP ---
+    if drop_zone is not None:
+        dx, dy = drop_zone
+
+        dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
+        dobotArm.open_gripper(api)
+        dobotArm.stop_pump(api)
+
+        dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
 
 cap.release()
 cv2.destroyAllWindows()
