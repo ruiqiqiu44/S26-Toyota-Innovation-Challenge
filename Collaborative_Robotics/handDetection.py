@@ -1,3 +1,5 @@
+from turtle import distance
+
 import dobotArm
 import lib.DobotDllType as dType
 import numpy as np
@@ -19,6 +21,44 @@ def pixel_to_robot(u, v, H):
     xy = H @ p
     xy /= xy[2]
     return xy[0], xy[1]
+
+def is_closer(last_position, current_position):
+    if last_position is None or current_position is None:
+        return None
+
+    last_x, last_y = last_position
+    last_position_distance = np.sqrt(last_x**2 + last_y**2)
+    current_x, current_y = current_position
+    current_position_distance = np.sqrt(current_x**2 + current_y**2)
+
+
+    if current_position_distance < last_position_distance:
+        return True
+    else:
+        return False
+
+
+def move_robot_arm_to_safe_position(distance_vector,threshold=50):
+    # Move the robot arm to a safe position (e.g., home position)
+    x,y = distance_vector
+    current_pose = dType.GetPose(dobotArm.api)
+    x_position = current_pose[0]
+    y_position = current_pose[1]
+    z_position = current_pose[2]
+
+    nparray = np.array(distance_vector)
+    nparray = nparray / np.linalg.norm(nparray) * threshold
+
+
+    if is_closer((x,y), (x_position, y_position)) and np.sqrt(x**2 + y**2) < threshold:
+      while np.sqrt(x**2 + y**2) < threshold:
+              dobotArm.move_to_xyz(dobotArm.api, x_position-nparray[0], y_position-nparray[1], z_position)  
+              time.sleep(1)  # Wait for the arm to move
+              current_pose = dType.GetPose(dobotArm.api)
+              x_position = current_pose[0]
+              y_position = current_pose[1]
+              z_position = current_pose[2]
+
 
 def detect_human_hand_distance(camera_frame):
     """
@@ -49,5 +89,5 @@ def detect_human_hand_distance(camera_frame):
     pose = dType.GetPose(dobotArm.api)
     arm_x, arm_y = pose[0], pose[1]
 
-    distance = float(np.sqrt((hand_x - arm_x) ** 2 + (hand_y - arm_y) ** 2))
+    distance = float((hand_x - arm_x) + (hand_y - arm_y))
     return distance
