@@ -13,8 +13,19 @@ base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
 options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
 detector = vision.HandLandmarker.create_from_options(options)
 
-H_matrix = np.load("HomographyMatrix.npy")
 
+api = dType.load()
+cap = cv2.VideoCapture(0)
+H_matrix = np.load("HomographyMatrix.npy")
+data = np.load("./camera_params.npz")
+camera_matrix = data["camera_matrix"]
+dist_coeffs   = data["dist_coeffs"]
+
+# Compute undistort maps once
+ret, frame = cap.read()
+h, w = frame.shape[:2]
+new_K, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, dist_coeffs, (w,h), 1)
+map1, map2 = cv2.initUndistortRectifyMap(camera_matrix, dist_coeffs, None, new_K, (w,h), cv2.CV_16SC2)
 
 def pixel_to_robot(u, v, H):
     p = np.array([u, v, 1.0])
@@ -49,15 +60,32 @@ def move_robot_arm_to_safe_position(distance_vector,threshold=50):
     nparray = np.array(distance_vector)
     nparray = nparray / np.linalg.norm(nparray) * threshold
 
-
     if is_closer((x,y), (x_position, y_position)) and np.sqrt(x**2 + y**2) < threshold:
+      return False
+      while np.sqrt(x**2 + y**2) < threshold:
+              dobotArm.move_to_xyz(dobotArm.api, x_position, y_position, z_position) #stops
+              time.sleep(1)  
+              current_pose = dType.GetPose(dobotArm.api)
+              x_position = current_pose[0]
+              y_position = current_pose[1]
+              z_position = current_pose[2]
+    return True
+    '''if is_closer((x,y), (x_position, y_position)) and np.sqrt(x**2 + y**2) < warning_threshold:
       while np.sqrt(x**2 + y**2) < threshold:
               dobotArm.move_to_xyz(dobotArm.api, x_position-nparray[0], y_position-nparray[1], z_position)  
               time.sleep(1)  # Wait for the arm to move
               current_pose = dType.GetPose(dobotArm.api)
               x_position = current_pose[0]
               y_position = current_pose[1]
-              z_position = current_pose[2]
+              z_position = current_pose[2]'''
+    '''else:
+      while np.sqrt(x**2 + y**2) < threshold:
+              dobotArm.move_to_xyz(dobotArm.api, x_position+nparray[0], y_position+nparray[1], z_position)  
+              time.sleep(1)  # Wait for the arm to move
+              current_pose = dType.GetPose(dobotArm.api)
+              x_position = current_pose[0]
+              y_position = current_pose[1]
+              z_position = current_pose[2]'''
 
 
 def detect_human_hand_distance(camera_frame):
@@ -66,6 +94,7 @@ def detect_human_hand_distance(camera_frame):
     between the detected wrist and the robot arm's current position.
     Returns None if no hand is detected.
     """
+    camera_frame = cv2.remap(camera_frame, map1, map2, cv2.INTER_LINEAR)
     h, w = camera_frame.shape[:2]
 
     # MediaPipe Tasks API requires an mp.Image in RGB format
