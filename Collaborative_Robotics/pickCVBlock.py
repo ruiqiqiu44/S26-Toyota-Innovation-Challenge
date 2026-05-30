@@ -23,10 +23,6 @@ import numpy as np
 import mediapipe as mp
 import cv2
 import time
-import mediapipe as mp
-from mediapipe.tasks import python
-from mediapipe.tasks.python import vision
-
 
 """CONSTANTS"""
 
