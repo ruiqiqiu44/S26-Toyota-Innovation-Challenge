@@ -20,8 +20,12 @@
 import dobotArm
 import lib.DobotDllType as dType
 import numpy as np
+import mediapipe as mp
 import cv2
 import time
+import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
 
 """CONSTANTS"""
@@ -179,45 +183,52 @@ def phase_detect_targets():
             return current_list
 
 
-# ---------------------------------------------------------
-# PHASE 3: PICK/PLACE LOOP
-# This function assumes 1 drop zone only has 1 part, and executes the pick/place operations in batches.
-# if you are picking up rigid car parts, would you still be able to move directly to the object and to the drop zone? 
-# Do you need collision avoidance? Think about if the robot gripper accidentally hits the plate or other parts on the way to the target, what would happen? How would you modify the robot's movement logic to avoid collisions?
-# ---------------------------------------------------------
+    
+    
+    
+    # ---------------------------------------------------------
+    # PHASE 3: PICK/PLACE LOOP
+    # This function assumes 1 drop zone only has 1 part, and executes the pick/place operations in batches.
+    # if you are picking up rigid car parts, would you still be able to move directly to the object and to the drop zone? 
+    # Do you need collision avoidance? Think about if the robot gripper accidentally hits the plate or other parts on the way to the target, what would happen? How would you modify the robot's movement logic to avoid collisions?
+    # ---------------------------------------------------------
+
 def phase_execute_batch(api, pick_list, drop_list):
-    cv2.VideoCapture(0)
-    time.sleep(0.5)
-    
-    if len(pick_list) == 0 or len(drop_list) == 0:
-        print("missing targets, aborting")
-        return False
-    
-    # Match 1 part to 1 drop zone (uses the smaller count)
-    batch_size = min(len(pick_list), len(drop_list))
-    print(f"\n[PHASE 3] Executing batch of {batch_size} operations.")
+        cv2.VideoCapture(0)
+        time.sleep(0.5)
+        
+        if len(pick_list) == 0 or len(drop_list) == 0:
+            print("missing targets, aborting")
+            return False
+        
+        # Match 1 part to 1 drop zone (uses the smaller count)
+        batch_size = min(len(pick_list), len(drop_list))
+        print(f"\n[PHASE 3] Executing batch of {batch_size} operations.")
 
-    for i in range(batch_size):
-        pick_x, pick_y = pick_list[i]
-        drop_x, drop_y = drop_list[i]
+        for i in range(batch_size):
+            pick_x, pick_y = pick_list[i]
+            drop_x, drop_y = drop_list[i]
 
-        print(f"Task {i+1}: Moving {pick_x, pick_y} to {drop_x, drop_y}")
+            print(f"Task {i+1}: Moving {pick_x, pick_y} to {drop_x, drop_y}")
 
-        # --- PICK SEQUENCE ---
-        dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
-        dobotArm.move_to_xyz(api, pick_x, pick_y, Z_PICK)
-        #optional alternate function call method to include a rotation of the gripper angle
-        #dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE, 45) 
+            # --- PICK SEQUENCE ---
+            dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
+            dobotArm.move_to_xyz(api, pick_x, pick_y, Z_PICK)
+            #optional alternate function call method to include a rotation of the gripper angle
+            #dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE, 45) 
 
-        dobotArm.close_gripper(api)
-        dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
+            dobotArm.close_gripper(api)
+            dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
 
-        # --- PLACE SEQUENCE ---
-        dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
-        dobotArm.open_gripper(api)
-        dobotArm.stop_pump(api)
-        dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
+            # --- PLACE SEQUENCE ---
+            dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
+            dobotArm.open_gripper(api)
+            dobotArm.stop_pump(api)
+            dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
 
+        print("\nBatch Complete.")
+        return True
+ 
     # irl, it is ok for 1 dish to contain multiple parts
     # if len(pick_list) > len(drop_list):
     #     for i in range(len(pick_list)):
@@ -235,9 +246,6 @@ def phase_execute_batch(api, pick_list, drop_list):
     #         dobotArm.stop_pump(api)
     #         dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
 
-    print("\nBatch Complete.")
-    return True
- 
 
 # ---------------------------------------------------------
 # MAIN EXECUTION
