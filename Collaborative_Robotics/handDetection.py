@@ -1,7 +1,6 @@
-from turtle import distance
+
 
 import dobotArm
-import lib.DobotDllType as dType
 import numpy as np
 import mediapipe as mp
 import cv2
@@ -14,7 +13,6 @@ options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
 detector = vision.HandLandmarker.create_from_options(options)
 
 
-api = dType.load()
 cap = cv2.VideoCapture(0)
 H_matrix = np.load("HomographyMatrix.npy")
 data = np.load("./camera_params.npz")
@@ -52,7 +50,7 @@ def is_closer(last_position, current_position):
 def move_robot_arm_to_safe_position(distance_vector,threshold=50):
     # Move the robot arm to a safe position (e.g., home position)
     x,y = distance_vector
-    current_pose = dType.GetPose(dobotArm.api)
+    current_pose = dobotArm.get_pose(dobotArm.api)
     x_position = current_pose[0]
     y_position = current_pose[1]
     z_position = current_pose[2]
@@ -65,7 +63,7 @@ def move_robot_arm_to_safe_position(distance_vector,threshold=50):
       while np.sqrt(x**2 + y**2) < threshold:
               dobotArm.move_to_xyz(dobotArm.api, x_position, y_position, z_position) #stops
               time.sleep(1)  
-              current_pose = dType.GetPose(dobotArm.api)
+              current_pose = dobotArm.get_pose(dobotArm.api)
               x_position = current_pose[0]
               y_position = current_pose[1]
               z_position = current_pose[2]
@@ -74,7 +72,7 @@ def move_robot_arm_to_safe_position(distance_vector,threshold=50):
       while np.sqrt(x**2 + y**2) < threshold:
               dobotArm.move_to_xyz(dobotArm.api, x_position-nparray[0], y_position-nparray[1], z_position)  
               time.sleep(1)  # Wait for the arm to move
-              current_pose = dType.GetPose(dobotArm.api)
+              current_pose = dobotArm.get_pose(dobotArm.api)
               x_position = current_pose[0]
               y_position = current_pose[1]
               z_position = current_pose[2]'''
@@ -82,7 +80,7 @@ def move_robot_arm_to_safe_position(distance_vector,threshold=50):
       while np.sqrt(x**2 + y**2) < threshold:
               dobotArm.move_to_xyz(dobotArm.api, x_position+nparray[0], y_position+nparray[1], z_position)  
               time.sleep(1)  # Wait for the arm to move
-              current_pose = dType.GetPose(dobotArm.api)
+              current_pose = dobotArm.get_pose(dobotArm.api)
               x_position = current_pose[0]
               y_position = current_pose[1]
               z_position = current_pose[2]'''
@@ -115,7 +113,7 @@ def detect_human_hand_distance(camera_frame):
     hand_x, hand_y = pixel_to_robot(px, py, H_matrix)
 
     # Get the robot arm's current XY position
-    pose = dType.GetPose(dobotArm.api)
+    pose = dobotArm.get_pose(dobotArm.api)
     arm_x, arm_y = pose[0], pose[1]
 
     distance = float((hand_x - arm_x) + (hand_y - arm_y))

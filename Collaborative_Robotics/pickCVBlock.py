@@ -23,6 +23,8 @@ import numpy as np
 import mediapipe as mp
 import cv2
 import time
+import threading
+import handDetection
 
 """CONSTANTS"""
 
@@ -269,32 +271,50 @@ while machine_state == "pick place":
         next_state()
     else: break
 
-def pick_up_object_from_point (api, position_vec, drop_zone=None):
-    x,y = position_vec
-    #Converts image -> robot coordinates
-    rx, ry = pixel_to_robot(x, y, H_matrix)
-    print(f"Pointed pick at image ({x},{y}) → robot ({rx:.2f},{ry:.2f})")
-    # --- SAFETY / APPROACH ---
-    dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
+_abort_event = threading.Event()
 
-    # --- DESCEND TO PICK ---
-    dobotArm.move_to_xyz(api, rx, ry, Z_PICK)
+def _safety_monitor(api, threshold=50):
+    while not _abort_event.is_set():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
+        dist = handDetection.detect_human_hand_distance(frame)
+        if dist is not None and abs(dist) < threshold:
+            dobotArm.emergency_stop(api)
+            _abort_event.set()
+        time.sleep(0.05)
 
-    # --- GRAB ---
-    dobotArm.close_gripper(api)
+def pick_up_object_from_point(api, position_vec, drop_zone=None):
+    rx, ry = pixel_to_robot(*position_vec, H_matrix)
+    print(f"Pointed pick at image {position_vec} → robot ({rx:.2f},{ry:.2f})")
 
-    # --- LIFT ---
-    dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
+    _abort_event.clear()
+    monitor = threading.Thread(target=_safety_monitor, args=(api,), daemon=True)
+    monitor.start()
 
-    # --- OPTIONAL DROP ---
-    if drop_zone is not None:
-        dx, dy = drop_zone
+    try:
+        if _abort_event.is_set(): return
+        dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
 
-        dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
-        dobotArm.open_gripper(api)
-        dobotArm.stop_pump(api)
+        if _abort_event.is_set(): return
+        dobotArm.move_to_xyz(api, rx, ry, Z_PICK)
 
-        dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
+        if _abort_event.is_set(): return
+        dobotArm.close_gripper(api)
+
+        dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
+
+        if drop_zone is not None:
+            dx, dy = drop_zone
+            if _abort_event.is_set(): return
+            dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
+            dobotArm.open_gripper(api)
+            dobotArm.stop_pump(api)
+            dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
+    finally:
+        _abort_event.set()
+        monitor.join(timeout=1)
 
 cap.release()
 cv2.destroyAllWindows()

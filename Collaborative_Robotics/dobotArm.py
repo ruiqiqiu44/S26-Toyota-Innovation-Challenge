@@ -136,3 +136,10 @@ def stop_pump(api):
     #We don't need to wait as long as we do for the gripper
     dType.dSleep(50)
 
+def get_pose(api):
+    return dType.GetPose(api)
+
+def emergency_stop(api):
+    dType.SetQueuedCmdStopExec(api)
+    dType.SetQueuedCmdClear(api)
+
