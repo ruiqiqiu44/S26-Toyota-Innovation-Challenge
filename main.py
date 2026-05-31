@@ -11,6 +11,15 @@ import cv2
 from scipy.spatial.transform import Rotation as R
 import time
 
+
+import dobotArm
+import lib.DobotDllType as dType                
+
+api = dType.load()
+dobotArm.initialize_robot(api)
+
+gripper_open = False
+
 # Global dictionary to store the latest pose from the Android app
 latest_pose = {
     "position": {"x": 0.0, "y": 0.0, "z": 0.0},
@@ -25,10 +34,10 @@ k_calib = None
 # --- WEBSOCKET SERVER LOGIC ---
 
 p = np.array([
-    [0, 0, 0],
-    [1512, 0, 0],
-    [0, 982, 0],
-    [1512, 982, 0],
+    [-100, -100, 0],
+    [-100, 100, 0],
+    [100, -100, 0],
+    [100, 100, 0],
 ])
 
 def solve_similarity_lines(p, l, v):
@@ -132,6 +141,7 @@ def rotate_x_axis(w, x, y, z):
 
 async def handle_connection(websocket):
     global r_calib, s_calib, t_calib, k_calib
+    global gripper_open,last_coordinates
     async for message in websocket:
         data = json.loads(message)
         
@@ -155,12 +165,19 @@ async def handle_connection(websocket):
                     # Clear calibration data after processing
                     calibration_points.clear()
                     calibration_vectors.clear()
-            if int(data['button_id']) == 2:  # button 2 moves arm to directed position
-                # Handle button 2 logic here
-                pass
+            if int(data['button_id']) == 2:  # button 2 m oves arm to directed position
+                if r_calib is not None:
+                    dobotArm.move_to_xyz(api, last_coordinates[0], last_coordinates[1], 10)
+                else:
+                    cal_coords = p[len(calibration_points)]
+                    dobotArm.move_to_xyz(api, cal_coords[0], cal_coords[1], 10)
+
             if int(data['button_id']) == 3:  # button 3 toggles gripper
-                # Handle button 3 logic here
-                pass
+                if gripper_open:
+                    dobotArm.close_gripper(api)
+                else:
+                    dobotArm.open_gripper(api)
+                gripper_open = not gripper_open
         else:
             # Handle your standard pose data
             latest_pose["position"] = data["position"]
