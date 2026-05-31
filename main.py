@@ -16,6 +16,7 @@ latest_pose = {
     "position": {"x": 0.0, "y": 0.0, "z": 0.0},
     "rotation": {"x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0}
 }
+last_coordinates = []
 
 r_calib = None
 s_calib = None
@@ -136,24 +137,30 @@ async def handle_connection(websocket):
         
         # Check if it's the special button message
         if data.get("type") == "special_button":
-            print(f"Special Button Pressed: {data['button_id']}")
-            pos = latest_pose["position"]
-            rot = latest_pose["rotation"]
-            vx, vy, vz = rotate_x_axis(rot["w"], rot["x"], rot["y"], rot["z"])
-            calibration_points.append([pos["x"], pos["y"], pos["z"]])
-            calibration_vectors.append([vx, vy, vz])
-            print(f"Collected Calibration Point: {calibration_points[-1]}, Vector: {calibration_vectors[-1]}")
-            if len(calibration_points) >= 4:
-                print("Performing calibration with collected points and vectors...")
-                r_calib, s_calib, t_calib, k_calib = solve_similarity_lines(p, calibration_points, calibration_vectors)
-                print("Calibration results:")
-                print("Rotation Matrix:\n", r_calib)
-                print("Scale:", s_calib)
-                print("Translation:", t_calib)
-                # Clear calibration data after processing
-                calibration_points.clear()
-                calibration_vectors.clear()
-            # Handle your special logic here
+            if int(data['button_id']) == 1:  # button 1 triggers calibration
+
+                pos = latest_pose["position"]
+                rot = latest_pose["rotation"]
+                vx, vy, vz = rotate_x_axis(rot["w"], rot["x"], rot["y"], rot["z"])
+                calibration_points.append([pos["x"], pos["y"], pos["z"]])
+                calibration_vectors.append([vx, vy, vz])
+                print(f"Collected Calibration Point: {calibration_points[-1]}, Vector: {calibration_vectors[-1]}")
+                if len(calibration_points) >= 4:
+                    print("Performing calibration with collected points and vectors...")
+                    r_calib, s_calib, t_calib, k_calib = solve_similarity_lines(p, calibration_points, calibration_vectors)
+                    print("Calibration results:")
+                    print("Rotation Matrix:\n", r_calib)
+                    print("Scale:", s_calib)
+                    print("Translation:", t_calib)
+                    # Clear calibration data after processing
+                    calibration_points.clear()
+                    calibration_vectors.clear()
+            if int(data['button_id']) == 2:  # button 2 moves arm to directed position
+                # Handle button 2 logic here
+                pass
+            if int(data['button_id']) == 3:  # button 3 toggles gripper
+                # Handle button 3 logic here
+                pass
         else:
             # Handle your standard pose data
             latest_pose["position"] = data["position"]
@@ -203,7 +210,6 @@ def main():
             #print(qx, qy, qz, qw)
             
             # generate an all white full screen image and show it with opencv, and overlay the text of the position and rotation on it, at 1512 x 982 resolution
-            img = np.ones((982, 1512, 3), dtype=np.uint8)
 
 
 
@@ -221,14 +227,7 @@ def main():
                 else:
                     print("Calibrated Position:", calibrated_pos)
                     print("Direction vector is parallel to z=0 plane, no intersection.")
-                    img = np.ones((982, 1512, 3), dtype=np.uint8)
-                    cv2.putText(img, f"Position: ({tx:.2f}, {ty:.2f}, {tz:.2f})", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
-                    cv2.putText(img, f"Rotation (quat): ({qx:.2f}, {qy:.2f}, {qz:.2f}, {qw:.2f})", (30, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
-                    # draw a red circle at the intersection point                
-                    cv2.circle(img, (int(intersection_point[0]), int(intersection_point[1])), 5, (0, 0, 255), -1)
-
-            cv2.imshow("ARCore Visualization", img)
-            cv2.waitKey(1) 
+                    last_coordinates = [intersection_point[0], intersection_point[1]]
 
             
             # Clear previous frame
