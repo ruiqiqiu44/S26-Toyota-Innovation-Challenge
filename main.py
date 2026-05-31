@@ -5,6 +5,7 @@ import json
 import threading
 import matplotlib.pyplot as plt
 import numpy as np
+import Collaborative_Robotics.pickCVBlock as pick
 from scipy.optimize import least_squares
 import cv2
 
@@ -12,8 +13,8 @@ from scipy.spatial.transform import Rotation as R
 import time
 
 
-import dobotArm
-import lib.DobotDllType as dType                
+import Collaborative_Robotics.dobotArm as dobotArm
+import Collaborative_Robotics.lib.DobotDllType as dType                
 
 api = dType.load()
 dobotArm.initialize_robot(api)
@@ -167,10 +168,10 @@ async def handle_connection(websocket):
                     calibration_vectors.clear()
             if int(data['button_id']) == 2:  # button 2 m oves arm to directed position
                 if r_calib is not None:
-                    dobotArm.move_to_xyz(api, last_coordinates[0], last_coordinates[1], 10)
+                    pick.move_with_safety(api, last_coordinates[0], last_coordinates[1], 10)
                 else:
                     cal_coords = p[len(calibration_points)]
-                    dobotArm.move_to_xyz(api, cal_coords[0], cal_coords[1], 10)
+                    pick.move_with_safety(api, cal_coords[0], cal_coords[1], 10)
 
             if int(data['button_id']) == 3:  # button 3 toggles gripper
                 if gripper_open:
@@ -255,6 +256,7 @@ def main():
     finally:
         plt.ioff()
         plt.close()
+        pick.cleanup()
 
 if __name__ == "__main__":
     main()

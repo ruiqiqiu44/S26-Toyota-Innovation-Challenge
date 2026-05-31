@@ -62,259 +62,53 @@ def pixel_to_robot(u, v, H):
 # Ex: what if the robot fails to pick up a target? should it retry? should it go back to scanning for targets in case the target was moved? what if a new plate is added during the pick/place phase?
 # What if a human's hand is in sight during pick/place phase? (safety first!)
 
-def next_state():
-    global machine_state
-    if machine_state == "scanning plate":
-        machine_state = "scanning target"
-    elif machine_state == "scanning target":
-        machine_state = "pick place"
-    elif machine_state == "pick place":
-        machine_state = "scanning plate"
-    else:
-        machine_state = "scanning plate"
+_hand_distance = None
+_hand_lock = threading.Lock()
 
-
-
-# ---------------------------------------------------------
-# PHASE 1: DETECT Part Drop Zones (Plates)
-# this script assumes a metallic circular plate as the drop zone, but you can modify the detection logic to fit your specific use case.
-# ---------------------------------------------------------
-def phase_detect_plates():
-    print("\n[PHASE 1] Scanning for drop zones. Waiting for stability...")
-    stability_counter = 0
-    last_count = 0
-    
+def _update_hand_position():
+    global _hand_distance
     while True:
-        ret, frame = cap.read()
-        frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
-        display_frame = frame.copy()
-        
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.medianBlur(gray, 7)
-        circles = cv2.HoughCircles(blurred, cv2.HOUGH_GRADIENT, 1, 150, param1=100, param2=35, minRadius=25, maxRadius=55)
-
-        current_list = []
-        if circles is not None:
-            circles = np.uint16(np.around(circles))
-            for i in circles[0, :]:
-                cv2.circle(display_frame, (i[0], i[1]), i[2], (0, 255, 0), 2)
-                rx, ry = pixel_to_robot(i[0], i[1], H_matrix)
-                current_list.append((rx, ry))
-
-        # --- AUTO-LOCK LOGIC ---
-        if len(current_list) > 0 and len(current_list) == last_count:
-            stability_counter += 1
-        else:
-            stability_counter = 0
-            last_count = len(current_list)
-
-        progress = int((stability_counter / STABILITY_LIMIT) * 100)
-        cv2.putText(display_frame, f"LOCKING PLATES: {progress}%", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-        cv2.imshow("Detection", display_frame)
-        cv2.waitKey(1)
-
-        if stability_counter >= STABILITY_LIMIT:
-            print(f"Locked {len(current_list)} plates.")
-            return current_list
-  
- 
-
-# ---------------------------------------------------------
-# PHASE 2: DETECT Red velcros to pick up (Red Blocks)
-# this script assumes the targets to be picked up are red blocks
-# be aware your target maynot be red, and they may not be rectangular! You will need to modify the detection logic to fit your specific use case.
-# ---------------------------------------------------------
-def phase_detect_targets():
-    print("\n[PHASE 2] Scanning for targets. Waiting for stability...")
-    stability_counter = 0
-    last_count = 0
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret: continue
-        
-        frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
-        # Create a display copy so drawings don't affect next frame's HSV detection
-        display_frame = frame.copy()
-        
-        # Red Tag Logic
-        hsv = cv2.cvtColor(cv2.GaussianBlur(frame, (3,3), 0), cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, np.array([0,120,70]), np.array([10,255,255])) + \
-               cv2.inRange(hsv, np.array([170,120,70]), np.array([180,255,255]))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5,5), np.uint8))
-        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        current_list = []
-        for cnt in contours:
-            if cv2.contourArea(cnt) > 800:
-                M = cv2.moments(cnt)
-                if M["m00"] != 0:
-                    cx, cy = int(M["m10"] / M["m00"]), int(M["m01"] / M["m00"])
-                    rx, ry = pixel_to_robot(cx, cy, H_matrix)
-                    current_list.append((rx, ry))
-                    # Draw on display_frame only
-                    cv2.drawContours(display_frame, [cnt], -1, (0, 255, 0), 2)
-                    
-        cv2.waitKey(1)
-
-        # --- STABILITY LOGIC ---
-        if len(current_list) != 0:
-            if len(current_list) > 0 and len(current_list) == last_count:
-                stability_counter += 1
-            else:
-                stability_counter = 0
-                last_count = len(current_list)
-
-        # Visual Feedback
-        progress = int((stability_counter / STABILITY_LIMIT) * 100)
-        color = (0, 255, 0) if progress < 100 else (255, 255, 0)
-        
-        cv2.putText(display_frame, f"LOCKING TARGETS: {progress}%", (20, 40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-        cv2.imshow("Detection", display_frame)
-        
-        # --- EXIT CONDITION ---
-        if stability_counter >= STABILITY_LIMIT:
-            print(f"[SUCCESS] Locked {len(current_list)} targets.")
-            #cv2.waitKey(500) # Brief pause so you can see the 100%
-    
-            return current_list
-
-
-    
-    
-    
-    # ---------------------------------------------------------
-    # PHASE 3: PICK/PLACE LOOP
-    # This function assumes 1 drop zone only has 1 part, and executes the pick/place operations in batches.
-    # if you are picking up rigid car parts, would you still be able to move directly to the object and to the drop zone? 
-    # Do you need collision avoidance? Think about if the robot gripper accidentally hits the plate or other parts on the way to the target, what would happen? How would you modify the robot's movement logic to avoid collisions?
-    # ---------------------------------------------------------
-
-def phase_execute_batch(api, pick_list, drop_list):
-        cv2.VideoCapture(0)
-        time.sleep(0.5)
-        
-        if len(pick_list) == 0 or len(drop_list) == 0:
-            print("missing targets, aborting")
-            return False
-        
-        # Match 1 part to 1 drop zone (uses the smaller count)
-        batch_size = min(len(pick_list), len(drop_list))
-        print(f"\n[PHASE 3] Executing batch of {batch_size} operations.")
-
-        for i in range(batch_size):
-            pick_x, pick_y = pick_list[i]
-            drop_x, drop_y = drop_list[i]
-
-            print(f"Task {i+1}: Moving {pick_x, pick_y} to {drop_x, drop_y}")
-
-            # --- PICK SEQUENCE ---
-            dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
-            dobotArm.move_to_xyz(api, pick_x, pick_y, Z_PICK)
-            #optional alternate function call method to include a rotation of the gripper angle
-            #dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE, 45) 
-
-            dobotArm.close_gripper(api)
-            dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
-
-            # --- PLACE SEQUENCE ---
-            dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
-            dobotArm.open_gripper(api)
-            dobotArm.stop_pump(api)
-            dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
-
-        print("\nBatch Complete.")
-        return True
- 
-    # irl, it is ok for 1 dish to contain multiple parts
-    # if len(pick_list) > len(drop_list):
-    #     for i in range(len(pick_list)):
-    #         pick_x, pick_y = pick_list[i]
-    #         drop_x, drop_y = drop_list[0]
-    #         # --- PICK SEQUENCE ---
-    #         dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
-    #         dobotArm.move_to_xyz(api, pick_x, pick_y, Z_PICK)
-    #         dobotArm.close_gripper(api)
-    #         dobotArm.move_to_xyz(api, pick_x, pick_y, Z_SAFE)
-
-    #     # --- PLACE SEQUENCE ---
-    #         dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
-    #         dobotArm.open_gripper(api)
-    #         dobotArm.stop_pump(api)
-    #         dobotArm.move_to_xyz(api, drop_x, drop_y, Z_SAFE)
-
-
-# ---------------------------------------------------------
-# MAIN EXECUTION
-# contains an oversimplified state machine that runs the three phases sequentially. You can modify the logic to fit your specific use case.
-# ---------------------------------------------------------
-dobotArm.initialize_robot(api)
-dobotArm.open_gripper(api)
-dobotArm.stop_pump(api)
-
-while machine_state == "scanning plate":
-    drop_zone = phase_detect_plates()
-    if drop_zone is not None:
-        next_state()
-
-
-while machine_state == "scanning target":
-    pick_target = phase_detect_targets()
-    if pick_target is not None:
-        next_state()
-
-
-while machine_state == "pick place":
-    completed = phase_execute_batch(api, pick_target, drop_zone)
-    if completed:
-        next_state()
-    else: break
-
-_abort_event = threading.Event()
-
-def _safety_monitor(api, threshold=50):
-    while not _abort_event.is_set():
         ret, frame = cap.read()
         if not ret:
-            break
+            continue
         frame = cv2.remap(frame, map1, map2, cv2.INTER_LINEAR)
         dist = handDetection.detect_human_hand_distance(frame)
-        if dist is not None and abs(dist) < threshold:
-            dobotArm.emergency_stop(api)
-            _abort_event.set()
-        time.sleep(0.05)
+        with _hand_lock:
+            _hand_distance = dist
+
+threading.Thread(target=_update_hand_position, daemon=True).start()
+
+def _hand_too_close(threshold=50):
+    with _hand_lock:
+        dist = _hand_distance
+    return dist is not None and abs(dist) < threshold
+
+def move_with_safety(api, tx, ty, tz, threshold=50, steps=20):
+    pose = dobotArm.get_pose(api)
+    sx, sy, sz = pose[0], pose[1], pose[2]
+    for i in range(1, steps + 1):
+        if _hand_too_close(threshold):
+            return False
+        t = i / steps
+        dobotArm.move_to_xyz(api, sx + t * (tx - sx), sy + t * (ty - sy), sz + t * (tz - sz))
+    return True
 
 def pick_up_object_from_point(api, position_vec, drop_zone=None):
     rx, ry = pixel_to_robot(*position_vec, H_matrix)
-    print(f"Pointed pick at image {position_vec} → robot ({rx:.2f},{ry:.2f})")
 
-    _abort_event.clear()
-    monitor = threading.Thread(target=_safety_monitor, args=(api,), daemon=True)
-    monitor.start()
+    if not move_with_safety(api, rx, ry, Z_SAFE): return
+    if not move_with_safety(api, rx, ry, Z_PICK): return
 
-    try:
-        if _abort_event.is_set(): return
-        dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
+    dobotArm.close_gripper(api)
+    move_with_safety(api, rx, ry, Z_SAFE)
 
-        if _abort_event.is_set(): return
-        dobotArm.move_to_xyz(api, rx, ry, Z_PICK)
+    if drop_zone is not None:
+        dx, dy = drop_zone
+        if not move_with_safety(api, dx, dy, Z_SAFE): return
+        dobotArm.open_gripper(api)
+        dobotArm.stop_pump(api)
+        move_with_safety(api, dx, dy, Z_SAFE)
 
-        if _abort_event.is_set(): return
-        dobotArm.close_gripper(api)
-
-        dobotArm.move_to_xyz(api, rx, ry, Z_SAFE)
-
-        if drop_zone is not None:
-            dx, dy = drop_zone
-            if _abort_event.is_set(): return
-            dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
-            dobotArm.open_gripper(api)
-            dobotArm.stop_pump(api)
-            dobotArm.move_to_xyz(api, dx, dy, Z_SAFE)
-    finally:
-        _abort_event.set()
-        monitor.join(timeout=1)
-
-cap.release()
-cv2.destroyAllWindows()
+def cleanup():
+    cap.release()
+    cv2.destroyAllWindows()

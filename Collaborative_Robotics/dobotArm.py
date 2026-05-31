@@ -139,7 +139,3 @@ def stop_pump(api):
 def get_pose(api):
     return dType.GetPose(api)
 
-def emergency_stop(api):
-    dType.SetQueuedCmdStopExec(api)
-    dType.SetQueuedCmdClear(api)
-
