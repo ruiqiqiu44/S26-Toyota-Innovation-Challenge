@@ -5,7 +5,7 @@ import json
 import threading
 import matplotlib.pyplot as plt
 import numpy as np
-import Collaborative_Robotics.pickCVBlock as pick
+import pickCVBlock as pick
 from scipy.optimize import least_squares
 import cv2
 
@@ -13,8 +13,8 @@ from scipy.spatial.transform import Rotation as R
 import time
 
 
-import Collaborative_Robotics.dobotArm as dobotArm
-import Collaborative_Robotics.lib.DobotDllType as dType                
+import dobotArm as dobotArm
+import lib.DobotDllType as dType                
 
 api = dType.load()
 dobotArm.initialize_robot(api)
